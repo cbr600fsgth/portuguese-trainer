@@ -203,6 +203,32 @@ http://localhost:8765/?today=<出発日>
 進捗ゼロのままスイープ期の日付を開くと対象カードが無く「今日の出題はなし」になる。
 先に1日目と2日目を済ませておく。
 
+## カンペの印刷
+
+現地に持ち歩く1枚ものの早見表を `data/phrases.json` から生成する。
+
+```bash
+cd ~/dev/ai_sandbox/portuguese-trainer && uv run tools/make_cheatsheet.py
+```
+
+`cheatsheet.xlsx` ができる。シートは2枚。
+
+- カンペ: A4横1枚に150文すべて。日本語・ポルトガル語・カナの3列を3段組で並べる
+- 全データ: メモとイタリア語を含む全項目。オートフィルタ付き。印刷対象外
+
+カンペのシートはシチュエーションで20グループに分け、各グループ内は現場での会話の流れ
+（入店 → 注文 → 会計 のような順）で並べる。左段の上から右段の下へ読み進む。
+`tags` に `must` を持つフレーズはポルトガル語を太字にしてある。
+3段目の末尾には発音の要点を6行入れてある。
+
+印刷は「1ページに収める」設定を埋め込んであるため、A4横を選んでそのまま出せばよい。
+150文をA4横1枚に詰める都合で実効フォントは6pt弱になる。読みやすさを優先する場合は
+`tools/make_cheatsheet.py` の `COLUMN_BREAKS` を4段に増やしてA3で出すか、
+`GROUPS` から不要なグループを外す。
+
+フレーズを追加したら再実行する。`GROUPS` に id を足していないフレーズがあると
+不整合として検出し、xlsxを書かずに終了する。
+
 ## 構成
 
 ```
@@ -215,6 +241,7 @@ js/store.js              localStorage とエクスポート/インポート
 data/phrases.json        フレーズ本体。配列の順序が投入順
 tools/serve.py           開発用の配信サーバー。キャッシュ無効
 tools/test-srs.mjs       srs.js のテスト。架空の旅程で回す
+tools/make_cheatsheet.py A4横1枚のカンペ（cheatsheet.xlsx）を生成
 audio/                   MP3（Phase 3で配置。.gitignore 済み）
 ```
 
