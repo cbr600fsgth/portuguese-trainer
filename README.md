@@ -173,7 +173,7 @@ http://localhost:8765/?today=<学習2日目>
 ヨーロッパポルトガル語（pt-PT）の音声を使用中: <音声名> / MP3 0件
 ```
 
-「pt-PT音声なし。ブラジル音声で代用中」と出た場合はPhase 3bのMP3生成を前倒しする。
+「pt-PT音声なし。ブラジル音声で代用中」と出た場合はPhase 3cのMP3生成を前倒しする。
 ブラジル発音で覚えると現地で通じにくくなるため、この確認は重要。
 
 ### 6. 進捗の永続化
@@ -248,10 +248,11 @@ js/srs.js                期限計算と出題選択。純関数のみ。実日�
 js/audio.js              音声の抽象化。MP3優先 → 内蔵TTSフォールバック
 js/store.js              localStorage とエクスポート/インポート
 data/phrases.json        フレーズ本体。配列の順序が投入順
+sw.js                    オフライン用のキャッシュ。localhostでは登録しない
 tools/serve.py           開発用の配信サーバー。キャッシュ無効
 tools/test-srs.mjs       srs.js のテスト。架空の旅程で回す
 tools/make_cheatsheet.py A4横1枚のカンペ（cheatsheet.xlsx）を生成
-audio/                   MP3（Phase 3bで配置。.gitignore 済み）
+audio/                   MP3（Phase 3cで配置。.gitignore 済み）
 ```
 
 ## SRSの設計
@@ -339,7 +340,30 @@ MP3の有無は `data/audio-manifest.json`（ID配列）で判定する。この
 ブラジル音声(pt-BR)で代用すると発音を誤学習するため、pt-PT音声が無い端末では警告を出す。
 端末の音声一覧は設定画面で確認できる。
 
-Phase 3bで `tools/gen_audio.py` によりGoogle Cloud TTSのpt-PT WaveNet音声から一括生成する。
+Phase 3cで `tools/gen_audio.py` によりGoogle Cloud TTSのpt-PT WaveNet音声から一括生成する。
+
+## オフライン
+
+`sw.js` がアプリ本体（HTML / CSS / JS / `data/phrases.json` / アイコン）をキャッシュするため、
+機内モードや圏外でもフレーズブックを引ける。設定画面の「オフライン」欄で状態を確認できる。
+
+| 表示 | 意味 |
+|---|---|
+| オフラインで開ける（キャッシュ名 / N件） | 保存済み。電波が無くても開く |
+| 準備中。一度リロードすると有効になる | 初回アクセス直後。リロードで有効になる |
+| 開発中（localhost）のため無効 | ローカル配信では登録しない |
+| この端末はオフライン保存に未対応 | Service Worker が使えないブラウザ |
+
+localhost では登録しない。`tools/serve.py` の no-store と噛み合わず、更新したはずのコードが
+古いまま出る事故を招くため。オフラインの確認は公開URLを機内モードで開いて行う。
+
+内蔵TTSは端末にダウンロード済みの音声を使うのでオフラインでも鳴る。ただしiOSは
+未ダウンロードの音声をその場で取りに行くことがあり、圏外では無音になる場合がある。
+出発前に一度オンラインで再生して確認しておく。
+
+キャッシュは版番号で丸ごと入れ替える。コードを変えたら `js/app.js` の `APP_VERSION` と
+`sw.js` の `VERSION` を同じ値に揃えて上げる。更新は次に開いたときに反映される
+（キャッシュを先に返し、裏で取り直す方式のため、変更直後の1回は古い画面が出る）。
 
 ## 進捗データ
 
@@ -373,5 +397,6 @@ iOSのPWAは長期未使用でストレージが破棄されうるため、設�
 - [x] Phase 1 骨組み、SRS 2段スケジューラ、内蔵TTS、ホーム、復習と新規、同日再挑戦、150文
 - [ ] Phase 2 聞き取りドリル、ロールプレイ、シーン別台本、Vault連携
 - [x] Phase 3a 旅行モード（実戦フレーズブック、検索、よく使う、見せる表示）
-- [ ] Phase 3b Service Worker、Cloud TTSのMP3差し替え
+- [x] Phase 3b オフライン対応（Service Worker）
+- [ ] Phase 3c Cloud TTSのMP3差し替え
 - [ ] Phase 4 実機オフライン確認

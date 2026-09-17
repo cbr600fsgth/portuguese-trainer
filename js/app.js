@@ -2,8 +2,9 @@ import * as srs from './srs.js';
 import * as store from './store.js';
 import * as audio from './audio.js';
 
-// 画面の不具合がキャッシュ由来かを切り分けるための版番号。コードを変えたら上げる
-const APP_VERSION = 'phase3-r1';
+// 画面の不具合がキャッシュ由来かを切り分けるための版番号。コードを変えたら上げる。
+// sw.js の VERSION と同じ値に揃える（ずれるとこの表示と配信される中身が食い違う）
+const APP_VERSION = 'phase3-r2';
 
 const SCENE_LABELS = {
   greet: 'あいさつ',
@@ -505,6 +506,9 @@ function renderSettings() {
   $('btn-departure-save').textContent = '出発日を保存';
 
   $('app-version').textContent = APP_VERSION;
+  offlineStatus().then((t) => {
+    $('offline-status').textContent = t;
+  });
   $('today-value').textContent = state.today;
   $('mode-value').textContent = {
     study: '学習',
@@ -683,9 +687,48 @@ function wire() {
   });
 }
 
+// ---- オフライン対応 ----
+
+/**
+ * Service Worker を登録する。失敗してもアプリは通常どおり動く。
+ *
+ * localhost では登録しない。tools/serve.py の no-store と噛み合わず、
+ * 更新したはずのコードが古いまま出る事故を招くため。オフラインの確認は
+ * 公開URLを機内モードで開いて行う。
+ */
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return;
+
+  navigator.serviceWorker.register('sw.js').catch((e) => {
+    console.warn('Service Workerの登録に失敗。オフラインでは開けない', e);
+  });
+}
+
+/** 設定画面に出すオフラインの状態 */
+async function offlineStatus() {
+  if (!('serviceWorker' in navigator)) return 'この端末はオフライン保存に未対応';
+  if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+    return '開発中（localhost）のため無効';
+  }
+
+  const reg = await navigator.serviceWorker.getRegistration();
+  if (!reg || !navigator.serviceWorker.controller) return '準備中。一度リロードすると有効になる';
+
+  const keys = await caches.keys();
+  const name = keys.find((k) => k.startsWith('pt-trainer-'));
+  if (!name) return '準備中。一度リロードすると有効になる';
+
+  const files = (await (await caches.open(name)).keys()).length;
+  return `オフラインで開ける（${name} / ${files}件）`;
+}
+
 // ---- 起動 ----
 
 async function main() {
+  // 出発日が未設定の経路でも登録したいので、分岐より前に置く
+  registerServiceWorker();
+
   state.today = resolveToday();
   state.cards = store.loadCards();
   state.meta = store.loadMeta();
