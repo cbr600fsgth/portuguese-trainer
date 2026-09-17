@@ -5,6 +5,8 @@ const CARDS_KEY = 'pt.cards';
 const META_KEY = 'pt.meta';
 // 出発日はここだけに持つ。ソースには入れない（公開リポジトリに旅行時期を残さないため）
 const TRIP_KEY = 'pt.trip';
+// 旅行モードでよく使うフレーズのID配列
+const FAVS_KEY = 'pt.favs';
 
 const DEFAULT_META = {
   streak: 0,
@@ -59,6 +61,16 @@ export function saveTrip(trip) {
   return write(TRIP_KEY, trip);
 }
 
+/** よく使うフレーズのID配列。未設定なら空配列 */
+export function loadFavs() {
+  const v = read(FAVS_KEY, []);
+  return Array.isArray(v) ? v : [];
+}
+
+export function saveFavs(ids) {
+  return write(FAVS_KEY, ids);
+}
+
 /** セッション完了を記録し、更新後のmetaを返す。同じ日に2回完了してもストリークは増えない */
 export function recordSession(meta, today, yesterday) {
   if (meta.lastDone === today) return meta;
@@ -78,11 +90,12 @@ export function recordSession(meta, today, yesterday) {
 export function exportJSON() {
   return JSON.stringify(
     {
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
       cards: loadCards(),
       meta: loadMeta(),
       trip: loadTrip(),
+      favs: loadFavs(),
     },
     null,
     2
@@ -98,10 +111,11 @@ export function importJSON(text) {
   saveCards(data.cards);
   if (data.meta) saveMeta({ ...DEFAULT_META, ...data.meta });
   if (data.trip) saveTrip(data.trip);
+  if (Array.isArray(data.favs)) saveFavs(data.favs);
   return true;
 }
 
-/** 進捗のみ消す。出発日の設定は残す */
+/** 進捗のみ消す。出発日と「よく使う」は学習の進捗ではないので残す */
 export function resetProgress() {
   localStorage.removeItem(CARDS_KEY);
   localStorage.removeItem(META_KEY);
@@ -110,4 +124,5 @@ export function resetProgress() {
 export function resetAll() {
   resetProgress();
   localStorage.removeItem(TRIP_KEY);
+  localStorage.removeItem(FAVS_KEY);
 }

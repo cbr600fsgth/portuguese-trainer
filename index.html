@@ -107,6 +107,51 @@
   <button id="btn-home" class="primary">ホームへ</button>
 </section>
 
+<!-- 旅行モード（実戦フレーズブック） -->
+<section id="screen-trip" class="screen hidden">
+  <button id="btn-trip-settings" class="corner" aria-label="設定">設定</button>
+
+  <div class="trip-top">
+    <p class="label">旅行 <span id="trip-day">1</span> 日目</p>
+    <h1 class="trip-title">フレーズブック</h1>
+  </div>
+
+  <input type="search" id="trip-search" class="search-input"
+         placeholder="日本語・ポルトガル語・カナで探す" aria-label="フレーズを探す">
+
+  <div id="trip-scenes" class="chip-row"></div>
+
+  <ul id="trip-list" class="phrase-list"></ul>
+  <p id="trip-empty" class="sub center hidden">見つかりません</p>
+  <p id="trip-audio-warning" class="warning hidden"></p>
+</section>
+
+<!-- 見せる用の大きい表示 -->
+<section id="screen-show" class="screen hidden">
+  <div class="session-bar">
+    <button id="btn-show-close" class="corner-left" aria-label="一覧へ戻る">一覧</button>
+    <span id="show-scene" class="stage-label grow"></span>
+  </div>
+
+  <div class="show-box">
+    <p id="show-pt" class="show-pt"></p>
+    <p id="show-kana" class="show-kana"></p>
+    <p id="show-jp" class="show-jp"></p>
+    <dl class="card-meta">
+      <dt>イタリア語</dt><dd id="show-it"></dd>
+      <dt>メモ</dt><dd id="show-note"></dd>
+    </dl>
+  </div>
+
+  <div class="show-actions">
+    <button id="btn-show-play" class="primary">聞かせる</button>
+    <div class="show-row">
+      <button id="btn-show-slow" class="secondary">ゆっくり</button>
+      <button id="btn-show-fav" class="secondary">よく使うに入れる</button>
+    </div>
+  </div>
+</section>
+
 <!-- 設定 -->
 <section id="screen-settings" class="screen hidden">
   <div class="session-bar">

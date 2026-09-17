@@ -3,7 +3,7 @@ import * as store from './store.js';
 import * as audio from './audio.js';
 
 // 画面の不具合がキャッシュ由来かを切り分けるための版番号。コードを変えたら上げる
-const APP_VERSION = 'phase1-r6';
+const APP_VERSION = 'phase3-r1';
 
 const SCENE_LABELS = {
   greet: 'あいさつ',
@@ -27,11 +27,15 @@ const state = {
   cards: {},
   meta: null,
   trip: null,     // { departure: 'YYYY-MM-DD' } 端末のlocalStorageにのみ保存する
+  favs: [],       // 旅行モードでよく使うフレーズのID配列
   queue: [],      // [{id, kind: 'review'|'new'}]
   index: 0,
   revealed: false,
   slow: false,
   session: null,
+  tripScene: null,  // null は「すべて」。FAV_SCENE はよく使う
+  tripQuery: '',
+  showId: null,     // 大きく表示しているフレーズ
 };
 
 // ---- 基準日 ----
@@ -45,9 +49,20 @@ function resolveToday() {
 // ---- 画面切替 ----
 
 function show(name) {
-  ['setup', 'home', 'session', 'done', 'settings'].forEach((s) => {
+  ['setup', 'home', 'session', 'done', 'trip', 'show', 'settings'].forEach((s) => {
     $(`screen-${s}`).classList.toggle('hidden', s !== name);
   });
+}
+
+/** 学習期・スイープ期はホーム、出発日以降はフレーズブックへ戻る */
+function goHome() {
+  if (srs.modeFor(state.today, state.trip) === 'trip') {
+    renderTrip();
+    show('trip');
+  } else {
+    renderHome();
+    show('home');
+  }
 }
 
 // ---- 初回セットアップ ----
@@ -59,7 +74,7 @@ function show(name) {
 function applyDeparture(value) {
   const trip = { departure: value };
   if (!srs.isValidTrip(trip)) return '出発日を選んでください';
-  if (srs.diffDays(state.today, value) <= 0) return '出発日は明日以降にしてください';
+  if (srs.diffDays(state.today, value) < 0) return '出発日は今日以降にしてください';
 
   state.trip = trip;
   store.saveTrip(trip);
@@ -99,8 +114,7 @@ function renderHome() {
   if (mode === 'trip') {
     $('departure-note').textContent = '旅行中';
     $('days-left').textContent = '0';
-    $('btn-start').textContent = '旅行モードは次のフェーズで実装';
-    $('btn-start').disabled = true;
+    $('btn-start').textContent = 'フレーズブックを開く';
     $('home-today').textContent = '';
   } else if (pending > 0) {
     $('btn-start').textContent = '今日の10分をはじめる';
@@ -266,6 +280,199 @@ function finishSession() {
   show('done');
 }
 
+// ---- 旅行モード（実戦フレーズブック） ----
+//
+// 出発日以降は学習を止め、150文を引くための道具に切り替える。
+// 現地で使う場面を想定し、操作は「探す・聞く・見せる」の3つだけに絞る。
+
+const FAV_SCENE = '__fav';
+
+/** 検索用に正規化する。アクセント記号を落として小文字に揃える */
+function normalize(s) {
+  return (s || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
+/** 現在の絞り込み条件に合うフレーズ。順序は phrases.json のまま */
+function tripPhrases() {
+  const q = normalize(state.tripQuery.trim());
+  const favs = new Set(state.favs);
+
+  return state.phrases.filter((p) => {
+    if (state.tripScene === FAV_SCENE) {
+      if (!favs.has(p.id)) return false;
+    } else if (state.tripScene && p.scene !== state.tripScene) {
+      return false;
+    }
+    if (!q) return true;
+    return normalize([p.jp, p.pt, p.kana, p.it, p.note].join(' ')).includes(q);
+  });
+}
+
+function isFav(id) {
+  return state.favs.includes(id);
+}
+
+/** よく使うの出し入れ。並びは phrases.json 順に揃え直す */
+function toggleFav(id) {
+  const set = new Set(state.favs);
+  if (set.has(id)) set.delete(id);
+  else set.add(id);
+  state.favs = state.phrases.map((p) => p.id).filter((i) => set.has(i));
+  store.saveFavs(state.favs);
+}
+
+function renderTrip() {
+  const day = srs.diffDays(state.trip.departure, state.today) + 1;
+  $('trip-day').textContent = day > 0 ? day : 1;
+
+  renderSceneChips();
+  renderTripList();
+
+  const warn = audio.warningText();
+  $('trip-audio-warning').textContent = warn || '';
+  $('trip-audio-warning').classList.toggle('hidden', !warn);
+}
+
+function renderSceneChips() {
+  const row = $('trip-scenes');
+  const left = row.scrollLeft;
+
+  const order = Object.keys(SCENE_LABELS);
+  const scenes = [...new Set(state.phrases.map((p) => p.scene))].sort(
+    (a, b) => order.indexOf(a) - order.indexOf(b)
+  );
+
+  // 最後の1件を外したときに、選べないチップが選ばれたままにならないようにする
+  if (state.tripScene === FAV_SCENE && state.favs.length === 0) state.tripScene = null;
+
+  const items = [{ key: null, label: 'すべて' }];
+  if (state.favs.length > 0) {
+    items.push({ key: FAV_SCENE, label: `★ よく使う ${state.favs.length}` });
+  }
+  scenes.forEach((sc) => items.push({ key: sc, label: SCENE_LABELS[sc] || sc }));
+
+  row.replaceChildren(
+    ...items.map((it) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `chip${state.tripScene === it.key ? ' on' : ''}`;
+      b.textContent = it.label;
+      b.addEventListener('click', () => {
+        state.tripScene = it.key;
+        renderSceneChips();
+        renderTripList();
+      });
+      return b;
+    })
+  );
+
+  row.scrollLeft = left;
+}
+
+function renderTripList() {
+  const list = $('trip-list');
+  const top = list.scrollTop;
+  const found = tripPhrases();
+
+  const frag = document.createDocumentFragment();
+  let lastScene = null;
+
+  found.forEach((p) => {
+    if (p.scene !== lastScene) {
+      lastScene = p.scene;
+      const head = document.createElement('li');
+      head.className = 'phrase-head';
+      head.textContent = SCENE_LABELS[p.scene] || p.scene;
+      frag.appendChild(head);
+    }
+
+    const li = document.createElement('li');
+    li.className = 'phrase-row';
+
+    const main = document.createElement('button');
+    main.type = 'button';
+    main.className = 'phrase-main';
+    [['phrase-jp', p.jp], ['phrase-pt', p.pt], ['phrase-kana', p.kana]].forEach(
+      ([cls, text]) => {
+        const span = document.createElement('span');
+        span.className = cls;
+        span.textContent = text;
+        main.appendChild(span);
+      }
+    );
+    main.addEventListener('click', () => openShow(p.id));
+
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'phrase-icon';
+    play.textContent = '♪';
+    play.setAttribute('aria-label', `${p.jp} を再生`);
+    play.addEventListener('click', () => audio.speak(p, 1.0));
+
+    const fav = document.createElement('button');
+    fav.type = 'button';
+    const paintFav = () => {
+      const on = isFav(p.id);
+      fav.className = `phrase-icon fav${on ? ' on' : ''}`;
+      fav.textContent = on ? '★' : '☆';
+      fav.setAttribute('aria-label', `${p.jp} をよく使う${on ? 'から外す' : 'に入れる'}`);
+    };
+    paintFav();
+    fav.addEventListener('click', () => {
+      toggleFav(p.id);
+      renderSceneChips();
+      // よく使う一覧を見ているときは、外した行がその場で消えないと混乱する
+      if (state.tripScene === FAV_SCENE) {
+        renderTripList();
+        return;
+      }
+      paintFav();
+    });
+
+    li.append(main, play, fav);
+    frag.appendChild(li);
+  });
+
+  list.replaceChildren(frag);
+  list.scrollTop = top;
+  $('trip-empty').classList.toggle('hidden', found.length > 0);
+}
+
+// ---- 見せる用の大きい表示 ----
+
+function openShow(id) {
+  state.showId = id;
+  state.slow = false;
+  renderShow();
+  show('show');
+  audio.speak(state.byId[id], 1.0);
+}
+
+function renderShow() {
+  const p = state.byId[state.showId];
+
+  $('show-scene').textContent = SCENE_LABELS[p.scene] || p.scene;
+  $('show-pt').textContent = p.pt;
+  $('show-kana').textContent = p.kana;
+  $('show-jp').textContent = p.jp;
+  $('show-it').textContent = p.it;
+  $('show-note').textContent = p.note;
+
+  $('btn-show-slow').textContent = state.slow ? '標準の速さ' : 'ゆっくり';
+  $('btn-show-fav').textContent = isFav(p.id) ? 'よく使うから外す' : 'よく使うに入れる';
+}
+
+function closeShow() {
+  audio.stop();
+  state.showId = null;
+  renderSceneChips();
+  renderTripList();
+  show('trip');
+}
+
 // ---- 設定 ----
 
 function renderSettings() {
@@ -316,8 +523,7 @@ function wire() {
       $('setup-error').classList.remove('hidden');
       return;
     }
-    renderHome();
-    show('home');
+    goHome();
   });
 
   $('btn-departure-save').addEventListener('click', () => {
@@ -328,6 +534,11 @@ function wire() {
 
   // 必須分が残っていれば通常セッション、終わっていれば再挑戦へ
   $('btn-start').addEventListener('click', () => {
+    if (srs.modeFor(state.today, state.trip) === 'trip') {
+      renderTrip();
+      show('trip');
+      return;
+    }
     const s = srs.buildSession(state.today, state.cards, state.phrases, state.trip);
     if (s.reviewIds.length + s.newIds.length > 0) startSession();
     else startReplay();
@@ -353,13 +564,43 @@ function wire() {
 
   $('btn-quit').addEventListener('click', () => {
     audio.stop();
-    renderHome();
-    show('home');
+    goHome();
   });
 
-  $('btn-home').addEventListener('click', () => {
-    renderHome();
-    show('home');
+  $('btn-home').addEventListener('click', goHome);
+
+  // ---- 旅行モード ----
+
+  $('trip-search').addEventListener('input', (e) => {
+    state.tripQuery = e.target.value;
+    // 絞り込み中のシーンに無い語を打つと空振りするので、探すときは全体から探す
+    if (state.tripQuery.trim() && state.tripScene !== null) {
+      state.tripScene = null;
+      renderSceneChips();
+    }
+    renderTripList();
+  });
+
+  $('btn-trip-settings').addEventListener('click', () => {
+    renderSettings();
+    show('settings');
+  });
+
+  $('btn-show-close').addEventListener('click', closeShow);
+
+  $('btn-show-play').addEventListener('click', () => {
+    audio.speak(state.byId[state.showId], state.slow ? 0.75 : 1.0);
+  });
+
+  $('btn-show-slow').addEventListener('click', () => {
+    state.slow = !state.slow;
+    renderShow();
+    audio.speak(state.byId[state.showId], state.slow ? 0.75 : 1.0);
+  });
+
+  $('btn-show-fav').addEventListener('click', () => {
+    toggleFav(state.showId);
+    renderShow();
   });
 
   $('btn-copy').addEventListener('click', async () => {
@@ -377,10 +618,7 @@ function wire() {
     show('settings');
   });
 
-  $('btn-settings-close').addEventListener('click', () => {
-    renderHome();
-    show('home');
-  });
+  $('btn-settings-close').addEventListener('click', goHome);
 
   $('btn-export').addEventListener('click', () => {
     const blob = new Blob([store.exportJSON()], { type: 'application/json' });
@@ -398,6 +636,7 @@ function wire() {
       store.importJSON(await file.text());
       state.cards = store.loadCards();
       state.meta = store.loadMeta();
+      state.favs = store.loadFavs();
       const trip = store.loadTrip();
       if (srs.isValidTrip(trip)) state.trip = trip;
       renderSettings();
@@ -418,6 +657,14 @@ function wire() {
 
   // Macでのキーボード操作
   document.addEventListener('keydown', (e) => {
+    if (!$('screen-show').classList.contains('hidden')) {
+      if (e.key === 'Escape') closeShow();
+      if (e.key === ' ') {
+        e.preventDefault();
+        audio.speak(state.byId[state.showId], state.slow ? 0.75 : 1.0);
+      }
+      return;
+    }
     if ($('screen-session').classList.contains('hidden')) return;
     const item = currentItem();
     if (!item) return;
@@ -442,6 +689,7 @@ async function main() {
   state.today = resolveToday();
   state.cards = store.loadCards();
   state.meta = store.loadMeta();
+  state.favs = store.loadFavs();
 
   const trip = store.loadTrip();
   state.trip = srs.isValidTrip(trip) ? trip : null;
@@ -460,11 +708,10 @@ async function main() {
     return;
   }
 
-  renderHome();
-  show('home');
+  goHome();
 
   await audio.init();
-  renderHome(); // 音声の判定結果を反映
+  goHome(); // 音声の判定結果を反映
 }
 
 main().catch((e) => {
