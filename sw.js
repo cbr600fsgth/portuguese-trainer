@@ -5,7 +5,7 @@
 // コードを変えたら js/app.js の APP_VERSION とこの VERSION を同じ値に揃えて上げる。
 // 揃っていないと、設定画面に出る版番号と実際に配信される中身がずれる。
 
-const VERSION = 'phase3-r2';
+const VERSION = 'phase3-r3';
 const CACHE = `pt-trainer-${VERSION}`;
 
 // 相対パスで書く。GitHub Pages のサブディレクトリ配信でもそのまま動く。
@@ -27,10 +27,13 @@ const SHELL = [
 ];
 
 self.addEventListener('install', (e) => {
+  // cache: 'reload' で必ずネットワークから取る。
+  // GitHub Pages は max-age=600 を返すため、既定のままだとブラウザのHTTPキャッシュに
+  // 残った古いファイルをそのまま焼き付けてしまい、版番号を上げるまで直せなくなる。
   e.waitUntil(
     caches
       .open(CACHE)
-      .then((c) => c.addAll(SHELL))
+      .then((c) => c.addAll(SHELL.map((u) => new Request(u, { cache: 'reload' }))))
       .then(() => self.skipWaiting())
   );
 });

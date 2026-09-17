@@ -4,7 +4,7 @@ import * as audio from './audio.js';
 
 // 画面の不具合がキャッシュ由来かを切り分けるための版番号。コードを変えたら上げる。
 // sw.js の VERSION と同じ値に揃える（ずれるとこの表示と配信される中身が食い違う）
-const APP_VERSION = 'phase3-r2';
+const APP_VERSION = 'phase3-r3';
 
 const SCENE_LABELS = {
   greet: 'あいさつ',
